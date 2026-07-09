@@ -1166,8 +1166,10 @@ function fx(box){
   let [x0,x1,y0,y1]=box;
   const ix=(x1-x0)*0.12, iy=(y1-y0)*0.12;
   x0+=ix; x1-=ix; y0+=iy; y1-=iy;   // หด X เข้าในกล่อง ไม่ให้ล้นกรอบ
+  // ใส่ stroke เป็น attribute inline เพราะ html2canvas (Export PDF) ไม่อ่าน stroke จาก CSS ภายนอก -> X จะหาย
+  const s='stroke="#00007a" stroke-width="1.6" vector-effect="non-scaling-stroke"';
   return `<svg class="fx" style="left:${x0}%;top:${y0}%;width:${x1-x0}%;height:${y1-y0}%" viewBox="0 0 10 10" preserveAspectRatio="none">`+
-    `<line x1="0.5" y1="0.5" x2="9.5" y2="9.5"/><line x1="9.5" y1="0.5" x2="0.5" y2="9.5"/></svg>`;
+    `<line x1="0.5" y1="0.5" x2="9.5" y2="9.5" ${s}/><line x1="9.5" y1="0.5" x2="0.5" y2="9.5" ${s}/></svg>`;
 }
 function renderItem19Crosses(keys){
   if(!keys || !keys.length) return "";
