@@ -1472,7 +1472,8 @@ async function exportFuelPDF(){
     const pdf=new jsPDF({unit:"mm",format:"a4",orientation:"landscape"});
     const pw=297,ph=210, ratio=canvas.height/canvas.width;
     let w=pw-16,h=w*ratio; if(h>ph-16){ h=ph-16; w=h/ratio; }
-    pdf.addImage(canvas.toDataURL("image/png"),"PNG",(pw-w)/2,8,w,h);
+    const yPos = Math.max(ph/2, ph/2 + (ph/2 - h)/2);   // วางตารางในครึ่งล่างของกระดาษ (จัดกึ่งกลางครึ่งล่าง)
+    pdf.addImage(canvas.toDataURL("image/png"),"PNG",(pw-w)/2,yPos,w,h);
     const csFile=(cs||"fuel").replace(/[^A-Za-z0-9]/g,"")||"fuel";
     await savePdfBlob(pdf.output("blob"), `FuelSummary_${csFile}_${new Date().toISOString().slice(0,10)}.pdf`);
   }catch(err){ console.error(err); toast("สร้าง PDF ไม่สำเร็จ: "+err.message,true); }
