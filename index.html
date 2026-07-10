@@ -761,13 +761,27 @@ function seedIfNeeded(){
 
 function tableGet(table){ return lsGet(LS_KEYS[table]); }
 function tableSet(table, arr){ lsSet(LS_KEYS[table], arr); }
+// บังคับรหัสสนามบินเป็นพิมพ์ใหญ่ก่อนเก็บลง localStorage
+function normRow(table, obj){
+  const o=Object.assign({}, obj);
+  (UPPER_COLS[table]||[]).forEach(k=>{ if(k in o) o[k]=upc(o[k]); });
+  return o;
+}
 function tableAdd(table, obj){
   const arr=tableGet(table); const id=nextId(arr);
-  arr.push(Object.assign({id}, obj)); tableSet(table, arr); return id;
+  arr.push(Object.assign({id}, normRow(table,obj))); tableSet(table, arr); return id;
 }
 function tableUpdate(table, id, obj){
   const arr=tableGet(table); const idx=arr.findIndex(x=>x.id===id);
-  if(idx>=0){ arr[idx]=Object.assign({id}, obj); tableSet(table, arr); }
+  if(idx>=0){ arr[idx]=Object.assign({id}, normRow(table,obj)); tableSet(table, arr); }
+}
+// แก้ข้อมูลเก่าที่เคยเก็บเป็นพิมพ์เล็กไว้ ให้เป็นพิมพ์ใหญ่ทั้งหมด (ทำครั้งเดียวตอนโหลด)
+function normalizeRouteCase(){
+  const rows=tableGet("route"); let changed=false;
+  rows.forEach(r=>UPPER_COLS.route.forEach(k=>{
+    const u=upc(r[k]); if(r[k]!==u){ r[k]=u; changed=true; }
+  }));
+  if(changed) tableSet("route", rows);
 }
 function tableDelete(table, id){ tableSet(table, tableGet(table).filter(x=>x.id!==id)); }
 function routeFind(dep,des){
@@ -826,6 +840,10 @@ function toast(msg, err){
   setTimeout(()=>t.className="toast",2200);
 }
 const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+// รหัสสนามบิน -> พิมพ์ใหญ่เสมอ (ทั้งตอนแสดงผลและตอนเก็บ) แม้ผู้ใช้พิมพ์ตัวเล็ก
+const upc = s => String(s??"").trim().toUpperCase();
+const UPPER_COLS = {route:["dep","des","altn1","altn2"]};
+const UPCASE_ATTR = 'style="text-transform:uppercase" oninput="this.value=this.value.toUpperCase()"';
 
 // ---------------- tabs ----------------
 document.querySelectorAll("nav button").forEach(b=>{
@@ -841,6 +859,7 @@ document.querySelectorAll("nav button").forEach(b=>{
 // ---------------- load databases ----------------
 async function loadAll(){
   seedIfNeeded();
+  normalizeRouteCase();
   DATA.aircraft = tableGet("aircraft");
   DATA.pilot    = tableGet("pilot");
   DATA.route    = tableGet("route");
@@ -885,8 +904,8 @@ function addLeg(data){
     <span class="legno">LEG ${document.querySelectorAll('.leg').length+1}</span>
     <button class="btn sm red rm no-print" onclick="this.closest('.leg').remove();renumberLegs()">✕</button>
     <div class="grid g4">
-      <div class="field"><label>DEP</label><input class="l_dep" value="${esc(data.dep||'')}" placeholder="VTBD"></div>
-      <div class="field"><label>DES</label><input class="l_des" value="${esc(data.des||'')}" placeholder="VTPI"></div>
+      <div class="field"><label>DEP</label><input class="l_dep" value="${esc(data.dep||'')}" placeholder="VTBD" ${UPCASE_ATTR}></div>
+      <div class="field"><label>DES</label><input class="l_des" value="${esc(data.des||'')}" placeholder="VTPI" ${UPCASE_ATTR}></div>
       <div class="field"><label>T/O time (HHMM)</label><input class="l_tot" value="${esc(data.tot||'')}" placeholder="0300"></div>
       <div class="field"><label>&nbsp;</label>
         <button class="btn sm ghost" onclick="lookupRoute('${id}')" style="width:100%">🔎 ดึงจาก Route DB</button></div>
@@ -903,8 +922,8 @@ function addLeg(data){
           <input class="l_min" value="${esc(data.ft_min||'')}" placeholder="30" style="width:50%"></div></div>
     </div>
     <div class="grid g4" style="margin-top:10px">
-      <div class="field"><label>ALTN 1 (16)</label><input class="l_altn1" value="${esc(data.altn1||'')}"></div>
-      <div class="field"><label>ALTN 2 (16)</label><input class="l_altn2" value="${esc(data.altn2||'')}"></div>
+      <div class="field"><label>ALTN 1 (16)</label><input class="l_altn1" value="${esc(data.altn1||'')}" ${UPCASE_ATTR}></div>
+      <div class="field"><label>ALTN 2 (16)</label><input class="l_altn2" value="${esc(data.altn2||'')}" ${UPCASE_ATTR}></div>
     </div>`;
   document.getElementById("legs").appendChild(div);
 }
@@ -941,11 +960,11 @@ function lookupRoute(id){
 function collectLegs(){
   return [...document.querySelectorAll("#legs .leg")].map((l,i)=>({
     leg:i+1,
-    dep:l.querySelector(".l_dep").value, des:l.querySelector(".l_des").value,
+    dep:upc(l.querySelector(".l_dep").value), des:upc(l.querySelector(".l_des").value),
     tot:l.querySelector(".l_tot").value, route:l.querySelector(".l_route").value,
     fl:l.querySelector(".l_fl").value, ft_hr:l.querySelector(".l_hr").value,
     ft_min:l.querySelector(".l_min").value,
-    altn1:l.querySelector(".l_altn1").value, altn2:l.querySelector(".l_altn2").value,
+    altn1:upc(l.querySelector(".l_altn1").value), altn2:upc(l.querySelector(".l_altn2").value),
   }));
 }
 
@@ -1330,7 +1349,8 @@ function buildTable(table, rows, tableId){
   const el=document.getElementById(tableId);
   el.innerHTML=`<thead><tr>${cols.map(c=>`<th${c[2]?` style="width:${c[2]}px"`:''}>${c[1]}</th>`).join("")}<th style="width:60px">ลบ</th></tr></thead>
     <tbody>${rows.map(r=>`<tr data-id="${r.id}">
-      ${cols.map(c=>`<td><input class="c_${c[0]}" value="${esc(r[c[0]])}" onchange="autoSave('${table}',${r.id},this)"></td>`).join("")}
+      ${cols.map(c=>{const up=(UPPER_COLS[table]||[]).includes(c[0]);
+        return `<td><input class="c_${c[0]}" value="${esc(r[c[0]])}" ${up?UPCASE_ATTR:""} onchange="autoSave('${table}',${r.id},this)"></td>`;}).join("")}
       <td><button class="btn sm red" onclick="delRow('${table}',${r.id})">ลบ</button></td></tr>`).join("")}</tbody>`;
 }
 function renderRoutes(){
@@ -1345,7 +1365,11 @@ function renderPilots(){
   buildTable("pilot",DATA.pilot.filter(p=>!q||p.name.toLowerCase().includes(q)),"pilotTable");
 }
 function rowValues(table, tr){
-  const o={}; COLS[table].forEach(c=>o[c[0]]=tr.querySelector(".c_"+c[0]).value); return o;
+  const up=UPPER_COLS[table]||[];
+  const o={}; COLS[table].forEach(c=>{
+    const v=tr.querySelector(".c_"+c[0]).value;
+    o[c[0]] = up.includes(c[0]) ? upc(v) : v;
+  }); return o;
 }
 async function autoSave(table,id,inp){
   const tr=inp.closest("tr");
