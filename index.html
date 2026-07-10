@@ -672,26 +672,91 @@ function lsGet(key){ try{ return JSON.parse(localStorage.getItem(key)||"[]"); }c
 function lsSet(key, arr){ localStorage.setItem(key, JSON.stringify(arr)); }
 function nextId(arr){ return arr.reduce((m,x)=>Math.max(m,x.id||0),0)+1; }
 
-function seedIfNeeded(){
-  if(localStorage.getItem(LS_SEEDED)) return;
-  if(lsGet(LS_KEYS.aircraft).length===0){
-    lsSet(LS_KEYS.aircraft, SEED.aircraft.map((a,i)=>({
-      id:i+1, acno:String(a.acno),
-      type:(String(a.type)+String(a.eq_c)+String(a.col_d)+String(a.col_e)).trim(),
-      wake:a.wake||"", equipment:a.equipment||"", colour:a.colour||"", pbn:a.pbn||"", code:a.code||"",
-    })));
-  }
-  if(lsGet(LS_KEYS.pilot).length===0){
-    lsSet(LS_KEYS.pilot, SEED.pilots.map((p,i)=>({id:i+1, name:p.name, callsign:p.callsign||""})));
-  }
-  if(lsGet(LS_KEYS.route).length===0){
-    lsSet(LS_KEYS.route, SEED.routes.map((r,i)=>({
-      id:i+1, dep:r.dep||"", des:r.des||"", route:r.route||"",
+const LS_SEED_FP = "fp_seed_fingerprint";   // ลายนิ้วมือของข้อมูลตั้งต้นที่ใส่ไปครั้งล่าสุด
+const nz = s => String(s ?? "").trim().replace(/\s+/g," ").toUpperCase();
+const acTypeOf = a => (String(a.type)+String(a.eq_c)+String(a.col_d)+String(a.col_e)).trim();
+
+// hash เร็วๆ ของ SEED — ถ้าเราอัปเดตข้อมูลใน repo แล้ว fingerprint จะเปลี่ยน -> merge ให้อัตโนมัติ
+function seedFingerprint(){
+  const s = SEED.routes.map(r=>nz(r.dep)+nz(r.des)+nz(r.route)).join("|")
+          + "#" + SEED.pilots.map(p=>nz(p.name)+nz(p.callsign)).join("|")
+          + "#" + SEED.aircraft.map(a=>nz(a.acno)).join("|");
+  let h=0;
+  for(let i=0;i<s.length;i++){ h=(Math.imul(h,31) + s.charCodeAt(i))|0; }
+  return String(h);
+}
+function seedFresh(){
+  lsSet(LS_KEYS.aircraft, SEED.aircraft.map((a,i)=>({
+    id:i+1, acno:String(a.acno), type:acTypeOf(a),
+    wake:a.wake||"", equipment:a.equipment||"", colour:a.colour||"", pbn:a.pbn||"", code:a.code||"",
+  })));
+  lsSet(LS_KEYS.pilot, SEED.pilots.map((p,i)=>({id:i+1, name:p.name, callsign:p.callsign||""})));
+  lsSet(LS_KEYS.route, SEED.routes.map((r,i)=>({
+    id:i+1, dep:r.dep||"", des:r.des||"", route:r.route||"",
+    ft_hr:String(r.ft_hr??""), ft_min:String(r.ft_min??""), fl:r.fl||"",
+    altn1:r.altn1||"", altn2:r.altn2||"", rmk:r.rmk||"",
+  })));
+}
+// merge ข้อมูลตั้งต้นชุดใหม่เข้ากับของเดิม — เพิ่มเฉพาะที่ยังไม่มี ไม่ทับ/ไม่ลบของที่ user แก้เอง
+function seedMerge(){
+  let addR=0, addP=0, addA=0, fixP=0;
+
+  const routes = tableGet("route");
+  const haveR = new Set(routes.map(r=>nz(r.dep)+"|"+nz(r.des)+"|"+nz(r.route)));
+  let rid = nextId(routes);
+  SEED.routes.forEach(r=>{
+    const k = nz(r.dep)+"|"+nz(r.des)+"|"+nz(r.route);
+    if(haveR.has(k)) return;
+    haveR.add(k);
+    routes.push({id:rid++, dep:r.dep||"", des:r.des||"", route:r.route||"",
       ft_hr:String(r.ft_hr??""), ft_min:String(r.ft_min??""), fl:r.fl||"",
-      altn1:r.altn1||"", altn2:r.altn2||"", rmk:r.rmk||"",
-    })));
+      altn1:r.altn1||"", altn2:r.altn2||"", rmk:r.rmk||""});
+    addR++;
+  });
+  if(addR) tableSet("route", routes);
+
+  const pilots = tableGet("pilot");
+  const byName = new Map(pilots.map(p=>[nz(p.name), p]));
+  let pid = nextId(pilots);
+  SEED.pilots.forEach(p=>{
+    const ex = byName.get(nz(p.name));
+    if(!ex){ pilots.push({id:pid++, name:p.name, callsign:p.callsign||""}); addP++; }
+    else if(!ex.callsign && p.callsign){ ex.callsign = p.callsign; fixP++; }   // เติมเฉพาะที่ว่าง
+  });
+  if(addP||fixP) tableSet("pilot", pilots);
+
+  const acs = tableGet("aircraft");
+  const haveA = new Set(acs.map(a=>nz(a.acno)));
+  let aid = nextId(acs);
+  SEED.aircraft.forEach(a=>{
+    if(haveA.has(nz(a.acno))) return;
+    haveA.add(nz(a.acno));
+    acs.push({id:aid++, acno:String(a.acno), type:acTypeOf(a),
+      wake:a.wake||"", equipment:a.equipment||"", colour:a.colour||"", pbn:a.pbn||"", code:a.code||""});
+    addA++;
+  });
+  if(addA) tableSet("aircraft", acs);
+
+  if(addR||addP||addA||fixP){
+    const parts=[];
+    if(addR) parts.push(`+${addR} เส้นทาง`);
+    if(addP) parts.push(`+${addP} นักบิน`);
+    if(addA) parts.push(`+${addA} อากาศยาน`);
+    if(fixP) parts.push(`เติม callsign ${fixP}`);
+    setTimeout(()=>toast("อัปเดตข้อมูลตั้งต้นใหม่: "+parts.join(", ")), 700);
   }
-  localStorage.setItem(LS_SEEDED, "1");
+}
+function seedIfNeeded(){
+  const fp = seedFingerprint();
+  if(!localStorage.getItem(LS_SEEDED)){          // เปิดครั้งแรก -> ใส่ข้อมูลตั้งต้นทั้งชุด
+    seedFresh();
+    localStorage.setItem(LS_SEEDED, "1");
+    localStorage.setItem(LS_SEED_FP, fp);
+    return;
+  }
+  if(localStorage.getItem(LS_SEED_FP) === fp) return;   // ข้อมูลตั้งต้นไม่เปลี่ยน -> ไม่ต้องทำอะไร
+  seedMerge();                                          // ข้อมูลตั้งต้นเปลี่ยน -> merge ของใหม่เข้าไป
+  localStorage.setItem(LS_SEED_FP, fp);
 }
 
 function tableGet(table){ return lsGet(LS_KEYS[table]); }
