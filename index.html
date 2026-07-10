@@ -514,7 +514,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
   <span style="font-size:24px">✈️</span>
   <div>
     <h1>Flight Plan Generator <span style="font-size:12px;font-weight:400;color:#bae6fd">(Standalone — ไม่ต้องใช้ server)</span></h1>
-    <div class="sub">ICAO FPL + Route / Aircraft / Pilot Database — เก็บข้อมูลในเบราว์เซอร์นี้ (localStorage)</div>
+    <div class="sub">ICAO FPL + Route / Aircraft / Pilot Database <span id="syncBadge" style="margin-left:10px;font-weight:600"></span></div>
   </div>
 </header>
 
@@ -665,6 +665,45 @@ const SEED = {"aircraft": [{"acno": 60313, "type": "A", "eq_c": "T", "col_d": 7,
 // ================================================================
 // localStorage data layer (แทนที่ Flask + SQLite backend เดิม)
 // ================================================================
+// ================================================================
+// Google Sheet sync (ตัวเลือก) — ตั้ง url+key แล้ว Route/Aircraft/Pilot จะแชร์กันทุกคน
+// ถ้าเว้นว่าง = ทำงานแบบเดิม (เก็บใน localStorage เครื่องใครเครื่องมัน ไม่แชร์)
+// ================================================================
+const SHEET_API = {
+  url: "https://script.google.com/macros/s/AKfycbwiKaZHho-utNwsW0mw-97c5exaIA1SRv_8WdoZ57nqcoVQVL7s_9LYhZ-DL0lI-Kp0uQ/exec",   // เช่น "https://script.google.com/macros/s/AKfy..../exec"
+  key: "Ilovemyjob",   // ต้องตรงกับ API_KEY ใน Code.gs
+};
+const SHEET_TABLES = ["route","aircraft","pilot"];   // แผนที่บันทึก (plans) ยังเก็บในเครื่อง = ส่วนตัว
+const sheetOn = () => !!(SHEET_API.url && SHEET_API.key);
+const sheetSyncs = t => sheetOn() && SHEET_TABLES.includes(t);
+
+async function sheetGet(){
+  const r = await fetch(`${SHEET_API.url}?key=${encodeURIComponent(SHEET_API.key)}`, {redirect:"follow"});
+  if(!r.ok) throw new Error("HTTP "+r.status);
+  const j = await r.json();
+  if(j.error) throw new Error(j.error);
+  return j;                       // {route:[], aircraft:[], pilot:[]}
+}
+async function sheetPost(action, table, row){
+  const r = await fetch(SHEET_API.url, {
+    method:"POST", redirect:"follow",
+    headers:{"Content-Type":"text/plain;charset=utf-8"},   // text/plain -> เลี่ยง CORS preflight
+    body: JSON.stringify({key:SHEET_API.key, action, table, row}),
+  });
+  if(!r.ok) throw new Error("HTTP "+r.status);
+  const j = await r.json();
+  if(j.error) throw new Error(j.error);
+  return j;                       // {ok, id, rows}
+}
+function setSyncBadge(state){
+  const el=document.getElementById("syncBadge"); if(!el) return;
+  const m={online:["\u25cf เชื่อม Google Sheet","#4ade80"],
+           offline:["\u25cf ออฟไลน์ (ใช้ข้อมูลแคช)","#f87171"],
+           busy:["\u25cf กำลังซิงก์...","#fbbf24"]};
+  const [t,c]=m[state]||["",""];
+  el.textContent=t; el.style.color=c;
+}
+
 const LS_KEYS = {aircraft:"fp_aircraft", pilot:"fp_pilot", route:"fp_route", plans:"fp_plans"};
 const LS_SEEDED = "fp_seeded_v1";
 
@@ -865,8 +904,20 @@ document.querySelectorAll("nav button").forEach(b=>{
 
 // ---------------- load databases ----------------
 async function loadAll(){
-  seedIfNeeded();
+  seedIfNeeded();          // เติมข้อมูลตั้งต้นลง cache (ใช้ตอนออฟไลน์)
   normalizeRouteCase();
+  if(sheetOn()){
+    try{
+      setSyncBadge("busy");
+      const remote = await sheetGet();
+      SHEET_TABLES.forEach(t=>{ if(Array.isArray(remote[t])) tableSet(t, remote[t]); });
+      setSyncBadge("online");
+    }catch(err){
+      console.warn("Google Sheet sync ล้มเหลว:", err);
+      setSyncBadge("offline");
+      setTimeout(()=>toast("เชื่อม Google Sheet ไม่ได้ — ใช้ข้อมูลที่แคชไว้", true), 700);
+    }
+  }
   DATA.aircraft = tableGet("aircraft");
   DATA.pilot    = tableGet("pilot");
   DATA.route    = tableGet("route");
@@ -1382,21 +1433,35 @@ function rowValues(table, tr){
 }
 async function autoSave(table,id,inp){
   const tr=inp.closest("tr");
-  tableUpdate(table, id, rowValues(table,tr));
+  const vals=rowValues(table,tr);
+  if(sheetSyncs(table)){
+    try{ setSyncBadge("busy"); const res=await sheetPost("update",table,Object.assign({id},vals));
+         tableSet(table,res.rows); setSyncBadge("online"); }
+    catch(err){ setSyncBadge("offline"); toast("บันทึกไม่สำเร็จ: "+err.message,true); return; }
+  } else { tableUpdate(table, id, vals); }
   // อัปเดต cache ในหน่วยความจำโดยไม่ re-render (กันโฟกัสหลุด)
-  const rec=DATA[table].find(x=>x.id===id);
-  if(rec) COLS[table].forEach(c=>rec[c[0]]=tr.querySelector(".c_"+c[0]).value);
+  DATA[table]=tableGet(table);
   if(table==="aircraft") fillAircraftSelect();
   if(table==="pilot") fillPilotSelect();
   toast("บันทึกอัตโนมัติ ✓");
 }
 async function delRow(table,id){
   if(!confirm("ลบรายการนี้?"))return;
-  tableDelete(table, id); await refresh(table); toast("ลบแล้ว");
+  if(sheetSyncs(table)){
+    try{ setSyncBadge("busy"); const res=await sheetPost("delete",table,{id});
+         tableSet(table,res.rows); setSyncBadge("online"); }
+    catch(err){ setSyncBadge("offline"); toast("ลบไม่สำเร็จ: "+err.message,true); return; }
+  } else { tableDelete(table, id); }
+  await refresh(table); toast("ลบแล้ว");
 }
 async function addRow(table){
   const blank={}; COLS[table].forEach(c=>blank[c[0]]="");
-  const id=tableAdd(table, blank);
+  let id;
+  if(sheetSyncs(table)){
+    try{ setSyncBadge("busy"); const res=await sheetPost("add",table,blank);
+         id=res.id; tableSet(table,res.rows); setSyncBadge("online"); }
+    catch(err){ setSyncBadge("offline"); toast("เพิ่มไม่สำเร็จ: "+err.message,true); return; }
+  } else { id=tableAdd(table, blank); }
   await refresh(table); toast("เพิ่มแถวใหม่ (id "+id+") — แก้ไขแล้วบันทึกอัตโนมัติ");
 }
 async function refresh(table){
