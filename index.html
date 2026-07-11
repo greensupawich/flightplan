@@ -673,6 +673,13 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
 
   <!-- ============================ USERS (ADMIN) TAB ============================ -->
   <section id="tab-users" class="tab">
+    <div class="card" id="reqCard" style="display:none;margin-bottom:16px;border:1px solid #f59e0b55">
+      <h2>🔔 คำขอเข้าใช้ที่รออนุมัติ <span id="reqCount" class="muted" style="font-size:13px"></span></h2>
+      <div class="muted" style="margin-bottom:12px">
+        คนที่ login ครั้งแรกแต่ยังไม่ได้รับสิทธิ์ — กด <b>อนุมัติ</b> เพื่อเพิ่มเข้ารายชื่อ หรือ <b>ปฏิเสธ</b> เพื่อลบคำขอ
+      </div>
+      <div class="tbl-wrap"><table id="reqTable"></table></div>
+    </div>
     <div class="card">
       <h2>🔑 จัดการผู้ใช้ที่อนุญาต <span class="muted" style="font-size:13px">(เฉพาะแอดมิน)</span></h2>
       <div class="muted" style="margin-bottom:12px">
@@ -958,7 +965,7 @@ async function loadAll(){
       setSyncBadge("busy");
       const remote = await sheetGet();
       SHEET_TABLES.forEach(t=>{ if(Array.isArray(remote[t])) tableSet(t, remote[t]); });
-      if(remote.me) applyIdentity(remote.me, remote.users);
+      if(remote.me) applyIdentity(remote.me, remote.users, remote.requests);
       setSyncBadge("online");
     }catch(err){
       if(err.message==="not_allowed"){ showNotAllowed(); throw err; }   // login ได้แต่ไม่อยู่ในรายชื่อ -> กลับไปหน้า gate
@@ -1710,18 +1717,21 @@ async function startApp(){
 }
 
 // นำข้อมูลตัวตนที่ server ยืนยัน มาปรับ UI (โชว์ชื่อ, เปิดแท็บแอดมิน)
-function applyIdentity(me, users){
+function applyIdentity(me, users, requests){
   USER_EMAIL = me.email; USER_NAME = me.name; IS_ADMIN = !!me.isAdmin;
   const box=document.getElementById("userBox"), info=document.getElementById("userInfo");
   if(box){ box.style.display="flex"; info.textContent=(USER_NAME?USER_NAME+" · ":"")+USER_EMAIL+(IS_ADMIN?" (แอดมิน)":""); }
   document.getElementById("navUsers").style.display = IS_ADMIN ? "" : "none";
-  if(IS_ADMIN && Array.isArray(users)) renderUsers(users);
+  if(IS_ADMIN){
+    if(Array.isArray(users)) renderUsers(users);
+    if(Array.isArray(requests)) renderRequests(requests);
+  }
 }
 
 function showNotAllowed(){
   const gate=document.getElementById("loginGate"), msg=document.getElementById("loginMsg");
   if(gate) gate.style.display="flex";
-  if(msg) msg.innerHTML = `อีเมล <b>${esc(USER_EMAIL||"")}</b> ยังไม่ได้รับอนุญาต<br>กรุณาติดต่อแอดมินให้เพิ่มสิทธิ์ แล้วลองใหม่ หรือ <a href="#" onclick="logout();return false" style="color:#93c5fd">เข้าด้วยบัญชีอื่น</a>`;
+  if(msg) msg.innerHTML = `✅ ส่งคำขอเข้าใช้ในนาม <b>${esc(USER_EMAIL||"")}</b> แล้ว<br>รอแอดมินอนุมัติ แล้วลองเข้าใหม่อีกครั้ง หรือ <a href="#" onclick="logout();return false" style="color:#93c5fd">เข้าด้วยบัญชีอื่น</a>`;
 }
 
 // Google ส่ง credential (ID token) กลับมาเมื่อ login สำเร็จ
@@ -1756,15 +1766,33 @@ function initAuth(){
 }
 
 // ---------------- users management (admin) ----------------
+const fmtTime=d=>d?String(d).replace("T"," ").slice(0,16):"—";
+// อัปเดตทั้งตารางผู้ใช้ + ตารางคำขอ จาก response เดียว (server คืน users+requests มาด้วยกัน)
+function renderAdmin(res){
+  if(res && Array.isArray(res.users)) renderUsers(res.users);
+  if(res && Array.isArray(res.requests)) renderRequests(res.requests);
+}
 function renderUsers(users){
   const t=document.getElementById("usersTable"); if(!t) return;
-  const fmt=d=>d?String(d).replace("T"," ").slice(0,16):"—";
   t.innerHTML=`<thead><tr><th>อีเมล</th><th>ชื่อ</th><th>เพิ่มโดย</th><th>เข้าใช้ล่าสุด</th><th style="width:70px">ลบ</th></tr></thead>
     <tbody>
     <tr style="opacity:.7"><td><b>${esc(ADMIN_EMAIL)}</b></td><td>แอดมิน</td><td>—</td><td>—</td><td>—</td></tr>
     ${(users||[]).map(u=>`<tr>
-      <td>${esc(u.email)}</td><td>${esc(u.name)}</td><td>${esc(u.added_by)}</td><td>${fmt(u.last_login)}</td>
+      <td>${esc(u.email)}</td><td>${esc(u.name)}</td><td>${esc(u.added_by)}</td><td>${fmtTime(u.last_login)}</td>
       <td><button class="btn sm red" onclick="deleteUser('${esc(u.email)}')">ลบ</button></td></tr>`).join("")}
+    </tbody>`;
+}
+function renderRequests(requests){
+  const card=document.getElementById("reqCard"), t=document.getElementById("reqTable"), cnt=document.getElementById("reqCount");
+  if(!t) return;
+  const rows=requests||[];
+  card.style.display = rows.length ? "" : "none";      // ซ่อนการ์ดถ้าไม่มีคำขอ
+  cnt.textContent = rows.length ? `(${rows.length})` : "";
+  t.innerHTML=`<thead><tr><th>อีเมล</th><th>ชื่อ</th><th>ขอเมื่อ</th><th style="width:170px">จัดการ</th></tr></thead>
+    <tbody>${rows.map(r=>`<tr>
+      <td>${esc(r.email)}</td><td>${esc(r.name)}</td><td>${fmtTime(r.requested_at)}</td>
+      <td><button class="btn sm" onclick="approveReq('${esc(r.email)}','${esc(r.name)}')">✓ อนุมัติ</button>
+          <button class="btn sm red" onclick="rejectReq('${esc(r.email)}')">ปฏิเสธ</button></td></tr>`).join("")}
     </tbody>`;
 }
 async function addUser(){
@@ -1773,8 +1801,7 @@ async function addUser(){
   if(!email){ toast("กรอกอีเมลก่อน", true); return; }
   try{
     setSyncBadge("busy");
-    const res=await sheetPost("user_add", null, {email, name});
-    renderUsers(res.users); setSyncBadge("online");
+    renderAdmin(await sheetPost("user_add", null, {email, name})); setSyncBadge("online");
     document.getElementById("newUserEmail").value=""; document.getElementById("newUserName").value="";
     toast("เพิ่มผู้ใช้ "+email+" ✓");
   }catch(err){ setSyncBadge("online"); toast("เพิ่มไม่สำเร็จ: "+err.message, true); }
@@ -1783,10 +1810,24 @@ async function deleteUser(email){
   if(!confirm("ลบสิทธิ์ของ "+email+" ?")) return;
   try{
     setSyncBadge("busy");
-    const res=await sheetPost("user_delete", null, {email});
-    renderUsers(res.users); setSyncBadge("online");
+    renderAdmin(await sheetPost("user_delete", null, {email})); setSyncBadge("online");
     toast("ลบผู้ใช้ "+email+" ✓");
   }catch(err){ setSyncBadge("online"); toast("ลบไม่สำเร็จ: "+err.message, true); }
+}
+async function approveReq(email, name){
+  try{
+    setSyncBadge("busy");
+    renderAdmin(await sheetPost("req_approve", null, {email, name})); setSyncBadge("online");
+    toast("อนุมัติ "+email+" ✓");
+  }catch(err){ setSyncBadge("online"); toast("อนุมัติไม่สำเร็จ: "+err.message, true); }
+}
+async function rejectReq(email){
+  if(!confirm("ปฏิเสธคำขอของ "+email+" ?")) return;
+  try{
+    setSyncBadge("busy");
+    renderAdmin(await sheetPost("req_reject", null, {email})); setSyncBadge("online");
+    toast("ปฏิเสธคำขอ "+email);
+  }catch(err){ setSyncBadge("online"); toast("ปฏิเสธไม่สำเร็จ: "+err.message, true); }
 }
 
 (function(){
