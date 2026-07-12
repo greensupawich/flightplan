@@ -739,6 +739,7 @@ const SHEET_TABLES = ["route","aircraft","pilot"];   // แผนที่บั
 // แอดมินสูงสุด (ตรงกับ ADMIN_EMAIL ใน Code.gs) — ใช้แค่โชว์ U;/ซ่อน UI, การบังคับจริงอยู่ที่ server
 const ADMIN_EMAIL = "green.supawich@gmail.com";
 const REMEMBER_KEY = "fp_remember";   // จำการ login บนอุปกรณ์นี้
+const TOKEN_KEY = "fp_idtoken";       // เก็บ ID token ไว้เข้าอัตโนมัติจนกว่าจะหมดอายุ
 
 // ---- สถานะ login (Google Sign-In) ----
 let ID_TOKEN = null;      // Google ID token (JWT) ของ session ปัจจุบัน
@@ -987,8 +988,15 @@ async function loadAll(){
       setSyncBadge("online");
     }catch(err){
       if(err.message==="not_allowed"){ showNotAllowed(); throw err; }   // login ได้แต่ไม่อยู่ในรายชื่อ -> กลับไปหน้า gate
-      console.warn("Google Sheet sync ล้มเหลว:", err);
       setSyncBadge("offline");
+      const gate=document.getElementById("loginGate");
+      if(authOn() && gate && gate.style.display!=="none"){   // ยังไม่เข้าเว็บ + เชื่อม server ไม่ได้ -> อยู่หน้า login
+        showLogin();
+        const msg=document.getElementById("loginMsg");
+        if(msg){ msg.style.color="#f87171"; msg.textContent="เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ ลองกดเข้าสู่ระบบอีกครั้ง"; }
+        throw err;
+      }
+      console.warn("Google Sheet sync ล้มเหลว:", err);
       setTimeout(()=>toast("เชื่อม Google Sheet ไม่ได้ — ใช้ข้อมูลที่แคชไว้", true), 700);
     }
   }
@@ -1790,6 +1798,7 @@ function onGoogleCredential(resp){
   // remember me: จดจำ/ยกเลิกการเข้าอัตโนมัติบนอุปกรณ์นี้
   const remember = (document.getElementById("rememberMe")||{}).checked !== false;
   localStorage.setItem(REMEMBER_KEY, remember ? "1" : "0");
+  if(remember && ID_TOKEN) localStorage.setItem(TOKEN_KEY, ID_TOKEN); else localStorage.removeItem(TOKEN_KEY);
   if(!remember && window.google) google.accounts.id.disableAutoSelect();
   const msg=document.getElementById("loginMsg"); if(msg){ msg.style.color=""; msg.textContent="กำลังตรวจสอบสิทธิ์..."; }
   startApp();   // ไม่ซ่อนหน้า login จนกว่าจะยืนยันสิทธิ์ (กันการเด้งเข้า-ออก)
@@ -1798,6 +1807,7 @@ function onGoogleCredential(resp){
 function logout(){
   try{ if(window.google) google.accounts.id.disableAutoSelect(); }catch(e){}
   localStorage.setItem(REMEMBER_KEY, "0");   // ไม่ให้เข้าอัตโนมัติซ้ำทันที
+  localStorage.removeItem(TOKEN_KEY);        // ลบ token ที่จำไว้
   ID_TOKEN=null; location.reload();
 }
 
@@ -1879,12 +1889,22 @@ async function rejectReq(email){
   }catch(err){ setSyncBadge("online"); toast("ปฏิเสธไม่สำเร็จ: "+err.message, true); }
 }
 
+function jwtExp(t){ try{ return JSON.parse(atob(t.split(".")[1])).exp*1000; }catch(e){ return 0; } }
+function tokenValid(t){ return !!t && jwtExp(t) > Date.now()+30000; }   // เผื่อ 30 วิ
+
 (function(){
-  if(authOn()){
-    document.getElementById("loginGate").style.display="flex";
-    initAuth();                    // ต้อง login ก่อนถึงเริ่มแอป
-  } else {
-    startApp();                    // โหมด local/dev (ยังไม่ตั้ง client id) -> ทำงานแบบเดิม
+  if(!authOn()){ startApp(); return; }   // โหมด local/dev (ยังไม่ตั้ง client id)
+  document.getElementById("loginGate").style.display="flex";
+  initAuth();                            // เตรียมปุ่ม Google + auto sign-in ไว้เสมอ (เผื่อ token หมดอายุ)
+  // remember me: ถ้ามี token ที่ยังไม่หมดอายุ -> เข้าเลยไม่ต้องกด
+  const saved = localStorage.getItem(TOKEN_KEY);
+  if(localStorage.getItem(REMEMBER_KEY) !== "0" && tokenValid(saved)){
+    ID_TOKEN = saved;
+    try{ const p=JSON.parse(atob(saved.split(".")[1])); USER_EMAIL=p.email; USER_NAME=p.name; }catch(e){}
+    const msg=document.getElementById("loginMsg"); if(msg){ msg.style.color=""; msg.textContent="กำลังเข้าสู่ระบบ..."; }
+    startApp();
+  } else if(saved){
+    localStorage.removeItem(TOKEN_KEY);  // token หมดอายุแล้ว ล้างทิ้ง
   }
 })();
 </script>
