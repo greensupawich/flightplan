@@ -513,15 +513,33 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
 <!-- Google Sign-In (GIS) -->
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <div id="loginGate" style="display:none;position:fixed;inset:0;z-index:9999;background:#0b1220;color:#e5e7eb;
-     flex-direction:column;align-items:center;justify-content:center;gap:18px;font-family:system-ui,sans-serif;text-align:center;padding:20px">
-  <div style="font-size:44px">✈️</div>
-  <div style="font-size:20px;font-weight:700">Flight Plan Generator</div>
-  <div style="opacity:.75;max-width:340px;line-height:1.5">ลงชื่อเข้าใช้ด้วยบัญชี Google ที่ได้รับอนุญาต<br>เพื่อเข้าถึงฐานข้อมูล Route / Aircraft / Pilot</div>
-  <div id="gbtn"></div>
-  <label style="opacity:.85;font-size:14px;cursor:pointer;white-space:nowrap">
-    <input type="checkbox" id="rememberMe" checked style="width:auto;vertical-align:middle;margin:0 8px 0 0">จดจำฉันบนอุปกรณ์นี้ (เข้าอัตโนมัติครั้งหน้า)
-  </label>
-  <div id="loginMsg" style="color:#f87171;min-height:20px;font-size:14px;max-width:340px"></div>
+     flex-direction:column;align-items:center;justify-content:center;font-family:system-ui,sans-serif;text-align:center;padding:20px">
+  <!-- ===== หน้าเข้าสู่ระบบ ===== -->
+  <div id="viewLogin" style="display:flex;flex-direction:column;align-items:center;gap:16px;max-width:360px;width:100%">
+    <div style="font-size:44px">✈️</div>
+    <div style="font-size:20px;font-weight:700">Flight Plan Generator</div>
+    <div style="opacity:.75;line-height:1.5">เข้าสู่ระบบด้วยบัญชี Google ที่ลงทะเบียนไว้</div>
+    <div id="gbtn"></div>
+    <label style="opacity:.85;font-size:14px;cursor:pointer;white-space:nowrap">
+      <input type="checkbox" id="rememberMe" checked style="width:auto;vertical-align:middle;margin:0 8px 0 0">จดจำฉันบนอุปกรณ์นี้ (เข้าอัตโนมัติครั้งหน้า)
+    </label>
+    <div id="loginMsg" style="min-height:20px;font-size:14px"></div>
+    <div style="border-top:1px solid #ffffff22;width:100%;padding-top:14px;font-size:14px">
+      <span style="opacity:.7">ยังไม่มีบัญชี?</span>
+      <button class="btn ghost" onclick="showRegister()" style="margin-left:6px">ลงทะเบียนขอใช้งาน</button>
+    </div>
+  </div>
+  <!-- ===== หน้าลงทะเบียนขอใช้งาน ===== -->
+  <div id="viewRegister" style="display:none;flex-direction:column;align-items:center;gap:16px;max-width:360px;width:100%">
+    <div style="font-size:44px">📝</div>
+    <div style="font-size:20px;font-weight:700">ลงทะเบียนขอใช้งาน</div>
+    <div style="opacity:.75;line-height:1.5">กรอกอีเมล Google ของคุณ แล้วกด "ขอใช้งาน"<br>แอดมินจะพิจารณาอนุมัติให้</div>
+    <input id="regEmail" type="email" placeholder="you@gmail.com" autocomplete="email"
+      style="width:100%;padding:10px 12px;border-radius:8px;border:1px solid #ffffff33;background:#0f172a;color:#e5e7eb;text-align:center;font-size:15px">
+    <button class="btn" onclick="submitRegister(this)" style="width:100%">ขอใช้งาน</button>
+    <div id="regMsg" style="min-height:20px;font-size:14px"></div>
+    <button class="btn ghost" onclick="showLogin()">← กลับไปเข้าสู่ระบบ</button>
+  </div>
 </div>
 <header>
   <span style="font-size:24px">✈️</span>
@@ -1716,9 +1734,10 @@ async function startApp(){
   addLeg();                        // เริ่มด้วย 1 leg
 }
 
-// นำข้อมูลตัวตนที่ server ยืนยัน มาปรับ UI (โชว์ชื่อ, เปิดแท็บแอดมิน)
+// นำข้อมูลตัวตนที่ server ยืนยัน มาปรับ UI (โชว์ชื่อ, เปิดแท็บแอดมิน) + ซ่อนหน้า login
 function applyIdentity(me, users, requests){
   USER_EMAIL = me.email; USER_NAME = me.name; IS_ADMIN = !!me.isAdmin;
+  const gate=document.getElementById("loginGate"); if(gate) gate.style.display="none";   // เข้าเว็บเมื่อยืนยันสิทธิ์แล้วเท่านั้น
   const box=document.getElementById("userBox"), info=document.getElementById("userInfo");
   if(box){ box.style.display="flex"; info.textContent=(USER_NAME?USER_NAME+" · ":"")+USER_EMAIL+(IS_ADMIN?" (แอดมิน)":""); }
   document.getElementById("navUsers").style.display = IS_ADMIN ? "" : "none";
@@ -1728,10 +1747,40 @@ function applyIdentity(me, users, requests){
   }
 }
 
+// login สำเร็จแต่ยังไม่มีสิทธิ์ -> อยู่ที่หน้า login พร้อมข้อความชวนลงทะเบียน (ไม่เด้งเข้าเว็บ)
 function showNotAllowed(){
   const gate=document.getElementById("loginGate"), msg=document.getElementById("loginMsg");
   if(gate) gate.style.display="flex";
-  if(msg) msg.innerHTML = `✅ ส่งคำขอเข้าใช้ในนาม <b>${esc(USER_EMAIL||"")}</b> แล้ว<br>รอแอดมินอนุมัติ แล้วลองเข้าใหม่อีกครั้ง หรือ <a href="#" onclick="logout();return false" style="color:#93c5fd">เข้าด้วยบัญชีอื่น</a>`;
+  showLogin();
+  if(msg){ msg.style.color="#fbbf24";
+    msg.innerHTML = `บัญชี <b>${esc(USER_EMAIL||"")}</b> ยังไม่มีบัญชีในระบบ<br>โปรดกด "ลงทะเบียนขอใช้งาน" ด้านล่าง`; }
+}
+
+// ---- สลับหน้า login / register ----
+function showRegister(){
+  document.getElementById("viewLogin").style.display="none";
+  const v=document.getElementById("viewRegister"); v.style.display="flex";
+  const g=document.getElementById("regEmail"); if(USER_EMAIL && !g.value) g.value=USER_EMAIL;
+  document.getElementById("regMsg").textContent=""; g.focus();
+}
+function showLogin(){
+  document.getElementById("viewRegister").style.display="none";
+  document.getElementById("viewLogin").style.display="flex";
+}
+async function submitRegister(btn){
+  const email=(document.getElementById("regEmail").value||"").trim().toLowerCase();
+  const msg=document.getElementById("regMsg");
+  if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)){ msg.style.color="#f87171"; msg.textContent="กรอกอีเมลให้ถูกต้อง"; return; }
+  if(btn){ btn.disabled=true; }
+  msg.style.color=""; msg.textContent="กำลังส่งคำขอ...";
+  try{
+    const res=await sheetPost("request_access", null, {email});
+    msg.style.color="#4ade80";
+    msg.textContent = res.status==="already_allowed"
+      ? "อีเมลนี้มีสิทธิ์อยู่แล้ว กลับไปเข้าสู่ระบบได้เลย"
+      : "✅ ส่งคำขอแล้ว รอแอดมินอนุมัติ แล้วเข้าสู่ระบบด้วย Google";
+  }catch(err){ msg.style.color="#f87171"; msg.textContent="ส่งคำขอไม่สำเร็จ: "+err.message; }
+  finally{ if(btn) btn.disabled=false; }
 }
 
 // Google ส่ง credential (ID token) กลับมาเมื่อ login สำเร็จ
@@ -1742,8 +1791,8 @@ function onGoogleCredential(resp){
   const remember = (document.getElementById("rememberMe")||{}).checked !== false;
   localStorage.setItem(REMEMBER_KEY, remember ? "1" : "0");
   if(!remember && window.google) google.accounts.id.disableAutoSelect();
-  const gate=document.getElementById("loginGate"); if(gate) gate.style.display="none";
-  startApp();
+  const msg=document.getElementById("loginMsg"); if(msg){ msg.style.color=""; msg.textContent="กำลังตรวจสอบสิทธิ์..."; }
+  startApp();   // ไม่ซ่อนหน้า login จนกว่าจะยืนยันสิทธิ์ (กันการเด้งเข้า-ออก)
 }
 
 function logout(){
