@@ -79,13 +79,18 @@
   .fpl-msg{white-space:pre;background:#1a1613;color:#ffb366;padding:12px 14px;border-radius:8px;
       font-family:"Courier New",monospace;font-size:13px;overflow:auto;margin:6px auto 18px;max-width:820px}
   @media print{
-    /* พิมพ์เฉพาะฟอร์ม ICAO (#preview) ด้วย engine จริงของเบราว์เซอร์ = เหมือนบนจอ 100% */
+    /* พิมพ์เฉพาะฟอร์ม ICAO (#preview) ด้วย engine จริงของเบราว์เซอร์ = เหมือนบนจอ 100%
+       ตอนพิมพ์ JS จะย้าย #preview มาเป็นลูกของ body แล้วซ่อนที่เหลือด้วย display:none
+       (ห้ามใช้ visibility:hidden เพราะไม่ตัด layout -> ส่วนที่มองไม่เห็นยังกินความสูง = ได้หน้าว่างเกินท้ายสุด) */
     body{background:#fff}
-    body *{visibility:hidden!important}
-    #preview, #preview *{visibility:visible!important}
+    body.printing > *{display:none!important}
+    body.printing > #preview{display:block!important;position:static;width:100%;margin:0;padding:0;background:#fff}
     .fpl-msg,.fpl-leglbl{display:none!important}
-    #preview{position:absolute;left:0;top:0;width:100%;margin:0;padding:0;background:#fff}
-    .fpl-page{width:100%;max-width:none;margin:0;box-shadow:none;page-break-after:always}
+    /* ยึด "ความสูง" = A4 (เผื่อ 0.1mm กันปัดเศษ) แล้วให้ความกว้างวิ่งตาม aspect-ratio ของฟอร์ม
+       ถ้ายึดความกว้าง 100% จะได้สูง 297.18mm > A4 297mm -> ล้นไปอีกหน้าเสมอ
+       ขึ้นหน้าใหม่ "ระหว่าง" leg เท่านั้น (ห้ามใช้ page-break-after:always ไม่งั้นได้หน้าว่างต่อท้าย) */
+    .fpl-page{height:296.9mm;width:auto;max-width:none;margin:0 auto;box-shadow:none;page-break-after:auto}
+    .fpl-page.brk{page-break-before:always}
     @page{size:A4 portrait;margin:0}
   }
 </style>
@@ -1427,7 +1432,7 @@ function renderItem19Crosses(keys){
 function renderPreview(res, obj){
   const c=res.common;
   let html="";
-  res.pages.forEach(p=>{
+  res.pages.forEach((p,i)=>{
     // พิกัด (left%, top%) วัดจากฟอร์มจริง CA48/RAF2919 VER 1.5.2 — ช่องรหัส/ตัวระบุใช้ fvFit() ให้เต็มกล่องพอดี
     const F=[
       fvFit(...BOX.callsign, c.callsign, 14),             // 7 AIRCRAFT ID
@@ -1455,7 +1460,7 @@ function renderPreview(res, obj){
       renderItem19Crosses(obj.item19),                     // 19 กากบาท X (เหมือนกันทุก leg)
     ].join("");
     html+=`<div class="fpl-leglbl no-print">LEG ${p.leg}: ${esc(p.dep)} → ${esc(p.des)} — ฟอร์ม ICAO (กด Export PDF ได้เลย)</div>
-      <div class="fpl-page"><img class="fpl-bg" src="${FORM_IMG}">${F}</div>
+      <div class="fpl-page${i?' brk':''}"><img class="fpl-bg" src="${FORM_IMG}">${F}</div>
       <div class="fpl-msg no-print">${esc(p.fpl_message)}</div>`;
   });
   document.getElementById("preview").innerHTML=html;
@@ -1463,6 +1468,27 @@ function renderPreview(res, obj){
 
 // ---------------- export PDF ฟอร์ม ICAO — ใช้ native print ของเบราว์เซอร์ (เหมือนบนจอ 100%) ----------------
 // เปิด print dialog -> เลือกปลายทาง "Save as PDF" -> เลือก location ได้ (render ด้วย engine เดียวกับที่แสดงบนจอ)
+// ย้าย #preview ออกมาเป็นลูกของ body ชั่วคราวตอนพิมพ์ แล้วซ่อนที่เหลือด้วย display:none
+// (ถ้าปล่อยไว้ใน main แล้วใช้ visibility:hidden ส่วนอื่นจะยังกินความสูง -> มีหน้าว่างเกินท้ายสุด)
+let _pvHome = null;
+function preparePrint(){
+  const pv = document.getElementById("preview");
+  if(_pvHome || !pv || !pv.querySelector(".fpl-page")) return;   // ไม่มีฟอร์ม -> ไม่ต้องย้าย
+  _pvHome = document.createComment("preview-home");
+  pv.parentNode.insertBefore(_pvHome, pv);
+  document.body.appendChild(pv);
+  document.body.classList.add("printing");
+}
+function restorePrint(){
+  if(!_pvHome) return;
+  const pv = document.getElementById("preview");
+  _pvHome.parentNode.insertBefore(pv, _pvHome);
+  _pvHome.remove(); _pvHome = null;
+  document.body.classList.remove("printing");
+}
+window.addEventListener("beforeprint", preparePrint);   // ครอบคลุม Ctrl+P ด้วย
+window.addEventListener("afterprint", restorePrint);
+
 function exportPDF(){
   const pages = document.querySelectorAll("#preview .fpl-page");
   if(!pages.length){ toast("กด 'สร้างฟอร์ม ICAO' ก่อน แล้วค่อย Export PDF",true); return; }
