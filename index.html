@@ -1090,6 +1090,9 @@ function addLeg(data){
     <div class="grid g4" style="margin-top:10px">
       <div class="field"><label>ALTN 1 (16)</label><input class="l_altn1" value="${esc(data.altn1||'')}" ${UPCASE_ATTR}></div>
       <div class="field"><label>ALTN 2 (16)</label><input class="l_altn2" value="${esc(data.altn2||'')}" ${UPCASE_ATTR}></div>
+      <div class="field"><label>เชื้อเพลิง/เติมน้ำมัน (Tons)</label>
+        <input class="l_fuel" value="${esc(data.fuel||'')}" placeholder="ว่าง=คิดต่อจากขาก่อน"
+          title="ว่าง = endurance = ขาก่อนหน้า − flight time − 10 นาที | ใส่ค่า = เติมน้ำมัน คิด endurance ใหม่แบบขาแรก"></div>
     </div>`;
   document.getElementById("legs").appendChild(div);
 }
@@ -1131,6 +1134,7 @@ function collectLegs(){
     fl:l.querySelector(".l_fl").value, ft_hr:l.querySelector(".l_hr").value,
     ft_min:l.querySelector(".l_min").value,
     altn1:upc(l.querySelector(".l_altn1").value), altn2:upc(l.querySelector(".l_altn2").value),
+    fuel:l.querySelector(".l_fuel").value.trim(),
   }));
 }
 
@@ -1232,11 +1236,21 @@ function clientGenerate(body){
   const legMinOf=l=>(parseInt(l.ft_hr,10)||0)*60+(parseInt(l.ft_min,10)||0);
   const fmtHHMM=m=>{ m=Math.max(0,Math.round(m)); return String(Math.floor(m/60)).padStart(2,'0')+String(m%60).padStart(2,'0'); };
   const legsIn=body.legs||[];
-  // ขา1: (fuel - 100 - final reserve 450) -> เวลา ; ขาอื่น = endurance ขาก่อนหน้า - flight time ขาก่อนหน้า - 10
+  // endurance ต่อขา:
+  //  - ขา 1: จากน้ำมัน (ช่องน้ำมันของขา ถ้ากรอก ไม่งั้นใช้ช่อง Endurance รวม) -> (fuel-100-reserve450) -> เวลา
+  //  - ขาอื่นที่ "กรอกน้ำมัน" = เติมน้ำมัน -> คิดใหม่แบบขาแรก
+  //  - ขาอื่นที่ "ไม่กรอก" = endurance ขาก่อนหน้า - flight time ขาก่อนหน้า - 10
+  const legFuelKg = l => (parseFloat(l.fuel)||0)*1000;
+  const hasFuel   = l => String(l.fuel||"").trim()!=="" && !isNaN(parseFloat(l.fuel));
   const enduArr=[];
   legsIn.forEach((leg,idx)=>{
-    enduArr.push(idx===0 ? enduMins(fuelKg-100-450)
-                         : Math.max(0, enduArr[idx-1]-legMinOf(legsIn[idx-1])-10));
+    if(idx===0){
+      enduArr.push(enduMins((hasFuel(leg)?legFuelKg(leg):fuelKg)-100-450));
+    }else if(hasFuel(leg)){
+      enduArr.push(enduMins(legFuelKg(leg)-100-450));                       // เติมน้ำมัน
+    }else{
+      enduArr.push(Math.max(0, enduArr[idx-1]-legMinOf(legsIn[idx-1])-10)); // คิดต่อจากขาก่อน
+    }
   });
   const pages = (body.legs||[]).map((leg,idx)=>{
     const enduM = enduArr[idx];
