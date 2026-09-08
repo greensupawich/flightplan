@@ -707,10 +707,6 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
           <input id="p_email" disabled style="background:var(--bg);color:var(--muted);cursor:not-allowed"></div>
         <div class="field"><label>ชื่อ-สกุล</label><input id="p_name" placeholder="เช่น ร.ต. สมชาย ใจดี"></div>
         <div class="field"><label>เบอร์โทร</label><input id="p_phone" placeholder="เช่น 081-234-5678"></div>
-        <div class="field"><label>ตำแหน่ง</label><input id="p_position" placeholder="เช่น นักบิน"></div>
-      </div>
-      <div class="grid g4" style="margin-top:12px">
-        <div class="field"><label>หน่วย/ฝูงบิน</label><input id="p_unit" placeholder="เช่น ฝูงบิน ๖๐๓"></div>
       </div>
       <div class="toolbar no-print" style="margin-top:14px;align-items:center">
         <button class="btn" onclick="saveProfile(this)">💾 บันทึกโปรไฟล์</button>
@@ -1945,7 +1941,7 @@ function renderProfile(p){
   p=p||{};
   const set=(id,v)=>{ const el=document.getElementById(id); if(el) el.value=v||""; };
   set("p_email", p.email||USER_EMAIL);
-  set("p_name", p.name); set("p_phone", p.phone); set("p_position", p.position); set("p_unit", p.unit);
+  set("p_name", p.name); set("p_phone", p.phone);
 }
 // ใช้ชื่อ/เบอร์จากโปรไฟล์เป็น default ของ Filed by / Phone (ถ้าช่องยังว่าง — ไม่ทับค่าที่ผู้ใช้กรอกเอง/โหลดจากแผน)
 function applyProfileDefaults(p){
@@ -1956,7 +1952,7 @@ function applyProfileDefaults(p){
 }
 async function saveProfile(btn){
   const g=id=>(document.getElementById(id).value||"").trim();
-  const row={ name:g("p_name"), phone:g("p_phone"), position:g("p_position"), unit:g("p_unit") };
+  const row={ name:g("p_name"), phone:g("p_phone") };
   const msg=document.getElementById("profileMsg");
   if(btn) btn.disabled=true; msg.style.color=""; msg.textContent="กำลังบันทึก...";
   try{
