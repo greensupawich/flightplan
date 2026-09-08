@@ -1827,7 +1827,8 @@ async function startApp(){
 // นำข้อมูลตัวตนที่ server ยืนยัน มาปรับ UI (โชว์ชื่อ, เปิดแท็บแอดมิน) + ซ่อนหน้า login
 function applyIdentity(me, users, requests, reports){
   USER_EMAIL = me.email; USER_NAME = me.name; IS_ADMIN = !!me.isAdmin;
-  USER_PROFILE = me.profile || {email:me.email, name:"", phone:"", position:"", unit:""};
+  USER_PROFILE = me.profile || {email:me.email, name:"", phone:""};
+  if(!USER_PROFILE.name) USER_PROFILE.name = me.name || "";   // fallback ชื่อจาก Google (เผื่อ server ยังไม่ส่งโปรไฟล์)
   renderProfile(USER_PROFILE);
   applyProfileDefaults(USER_PROFILE);
   const gate=document.getElementById("loginGate"); if(gate) gate.style.display="none";   // เข้าเว็บเมื่อยืนยันสิทธิ์แล้วเท่านั้น
