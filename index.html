@@ -563,6 +563,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
   <button data-tab="aircraft">🛩️ Aircraft DB</button>
   <button data-tab="pilots">👨‍✈️ Pilot DB</button>
   <button data-tab="saved">💾 แผนที่บันทึก</button>
+  <button data-tab="profile">👤 โปรไฟล์</button>
   <button data-tab="report">🛠️ แจ้งข้อขัดข้อง</button>
   <button data-tab="users" id="navUsers" style="display:none">🔑 จัดการผู้ใช้</button>
 </nav>
@@ -693,6 +694,31 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     </div>
   </section>
 
+  <!-- ============================ PROFILE TAB (ทุกคน) ============================ -->
+  <section id="tab-profile" class="tab">
+    <div class="card">
+      <h2>👤 โปรไฟล์ของฉัน</h2>
+      <div class="muted" style="margin-bottom:14px">
+        ข้อมูลนี้เป็นของคุณเอง แก้ไขได้เฉพาะเจ้าของ — <b>ชื่อ</b> และ <b>เบอร์โทร</b> จะถูกใช้เป็นค่าเริ่มต้นของช่อง
+        <b>Filed by</b> และ <b>Phone</b> ในหน้าสร้าง Flight Plan (ยังแก้รายเที่ยวได้)
+      </div>
+      <div class="grid g4">
+        <div class="field"><label>อีเมล (จากบัญชี Google)</label>
+          <input id="p_email" disabled style="background:var(--bg);color:var(--muted);cursor:not-allowed"></div>
+        <div class="field"><label>ชื่อ-สกุล</label><input id="p_name" placeholder="เช่น ร.ต. สมชาย ใจดี"></div>
+        <div class="field"><label>เบอร์โทร</label><input id="p_phone" placeholder="เช่น 081-234-5678"></div>
+        <div class="field"><label>ตำแหน่ง</label><input id="p_position" placeholder="เช่น นักบิน"></div>
+      </div>
+      <div class="grid g4" style="margin-top:12px">
+        <div class="field"><label>หน่วย/ฝูงบิน</label><input id="p_unit" placeholder="เช่น ฝูงบิน ๖๐๓"></div>
+      </div>
+      <div class="toolbar no-print" style="margin-top:14px;align-items:center">
+        <button class="btn" onclick="saveProfile(this)">💾 บันทึกโปรไฟล์</button>
+        <span id="profileMsg" class="muted"></span>
+      </div>
+    </div>
+  </section>
+
   <!-- ============================ REPORT ISSUE TAB (ทุกคน) ============================ -->
   <section id="tab-report" class="tab">
     <div class="card">
@@ -770,6 +796,7 @@ let ID_TOKEN = null;      // Google ID token (JWT) ของ session ปัจ�
 let USER_EMAIL = null;    // อีเมลของคนที่ login (จาก token)
 let USER_NAME = null;     // ชื่อจาก Google
 let IS_ADMIN = false;     // ยืนยันโดย server (doGet.me.isAdmin)
+let USER_PROFILE = null;  // โปรไฟล์ส่วนตัว (name/phone/position/unit)
 const authOn  = () => /apps\.googleusercontent\.com$/.test(GOOGLE_CLIENT_ID);   // ตั้ง client id แล้วหรือยัง
 const sheetOn = () => !!(SHEET_API.url && ID_TOKEN);      // เชื่อม Sheet ได้เมื่อมี url + login แล้ว
 const sheetSyncs = t => sheetOn() && SHEET_TABLES.includes(t);
@@ -1804,6 +1831,9 @@ async function startApp(){
 // นำข้อมูลตัวตนที่ server ยืนยัน มาปรับ UI (โชว์ชื่อ, เปิดแท็บแอดมิน) + ซ่อนหน้า login
 function applyIdentity(me, users, requests, reports){
   USER_EMAIL = me.email; USER_NAME = me.name; IS_ADMIN = !!me.isAdmin;
+  USER_PROFILE = me.profile || {email:me.email, name:"", phone:"", position:"", unit:""};
+  renderProfile(USER_PROFILE);
+  applyProfileDefaults(USER_PROFILE);
   const gate=document.getElementById("loginGate"); if(gate) gate.style.display="none";   // เข้าเว็บเมื่อยืนยันสิทธิ์แล้วเท่านั้น
   const box=document.getElementById("userBox"), info=document.getElementById("userInfo");
   if(box){ box.style.display="flex"; info.textContent=(USER_NAME?USER_NAME+" · ":"")+USER_EMAIL+(IS_ADMIN?" (แอดมิน)":""); }
@@ -1910,6 +1940,36 @@ async function saveUser(btn){
     toast("บันทึก "+newEmail+" ✓");
   }catch(err){ setSyncBadge("online"); toast("บันทึกไม่สำเร็จ: "+err.message, true); }
 }
+// ---- โปรไฟล์ส่วนตัว ----
+function renderProfile(p){
+  p=p||{};
+  const set=(id,v)=>{ const el=document.getElementById(id); if(el) el.value=v||""; };
+  set("p_email", p.email||USER_EMAIL);
+  set("p_name", p.name); set("p_phone", p.phone); set("p_position", p.position); set("p_unit", p.unit);
+}
+// ใช้ชื่อ/เบอร์จากโปรไฟล์เป็น default ของ Filed by / Phone (ถ้าช่องยังว่าง — ไม่ทับค่าที่ผู้ใช้กรอกเอง/โหลดจากแผน)
+function applyProfileDefaults(p){
+  p=p||{};
+  const f=document.getElementById("f_filed"), ph=document.getElementById("f_phone");
+  if(f && !f.value.trim() && p.name)  f.value=p.name;
+  if(ph && !ph.value.trim() && p.phone) ph.value=p.phone;
+}
+async function saveProfile(btn){
+  const g=id=>(document.getElementById(id).value||"").trim();
+  const row={ name:g("p_name"), phone:g("p_phone"), position:g("p_position"), unit:g("p_unit") };
+  const msg=document.getElementById("profileMsg");
+  if(btn) btn.disabled=true; msg.style.color=""; msg.textContent="กำลังบันทึก...";
+  try{
+    setSyncBadge("busy");
+    const res=await sheetPost("profile_save", null, row);
+    USER_PROFILE=res.profile; renderProfile(USER_PROFILE);
+    // อัปเดต default Filed by/Phone ให้ตรงโปรไฟล์ใหม่ทันที (เขียนทับเฉพาะที่เท่ากับค่าเดิม/ว่าง)
+    applyProfileDefaults(USER_PROFILE);
+    setSyncBadge("online"); msg.style.color="#4ade80"; msg.textContent="✅ บันทึกโปรไฟล์แล้ว";
+  }catch(err){ setSyncBadge("online"); msg.style.color="#f87171"; msg.textContent="บันทึกไม่สำเร็จ: "+err.message; }
+  finally{ if(btn) btn.disabled=false; }
+}
+
 // ---- แจ้งข้อขัดข้อง ----
 async function submitReport(btn){
   const ta=document.getElementById("reportMsg"), msg=document.getElementById("reportSent");
