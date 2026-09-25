@@ -1116,11 +1116,25 @@ function addLeg(data){
       <div class="field"><label>เชื้อเพลิง/เติมน้ำมัน (Tons)</label>
         <input class="l_fuel" value="${esc(data.fuel||'')}" placeholder="ว่าง=คิดต่อจากขาก่อน"
           title="ว่าง = endurance = ขาก่อนหน้า − flight time − 10 นาที | ใส่ค่า = เติมน้ำมัน คิด endurance ใหม่แบบขาแรก"></div>
+    </div>
+    <div class="grid g4" style="margin-top:10px">
+      <div class="field" style="grid-column:span 2">
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+          <input type="checkbox" class="l_dofsame" ${data.dof?'':'checked'} style="width:auto;margin:0" onchange="toggleLegDof(this)">
+          DOF ของขานี้ ตรงกับ Item 18 ด้านล่าง</label>
+        <input class="l_dof" value="${esc(data.dof||'')}" placeholder="DOF ของขานี้ (YYMMDD เช่น 260615)"
+          style="display:${data.dof?'block':'none'};margin-top:6px" title="เมื่อ DOF ของขานี้ต่างจาก Item 18 (เช่นบินข้ามวัน) ให้กรอกที่นี่ — จะไปแทน DOF/ ในฟอร์มของขานี้"></div>
     </div>`;
   document.getElementById("legs").appendChild(div);
 }
 function renumberLegs(){
   document.querySelectorAll("#legs .leg .legno").forEach((el,i)=>el.textContent="LEG "+(i+1));
+}
+// checkbox "DOF ตรงกับ Item 18": ติ๊ก=ซ่อนช่อง+ใช้ DOF ร่วม / ไม่ติ๊ก=โชว์ช่องกรอก DOF ของขานี้
+function toggleLegDof(cb){
+  const inp=cb.closest(".field").querySelector(".l_dof");
+  inp.style.display = cb.checked ? "none" : "block";
+  if(cb.checked) inp.value=""; else inp.focus();
 }
 function applyRoute(leg,r){
   leg.querySelector(".l_route").value=r.route||"";
@@ -1158,6 +1172,7 @@ function collectLegs(){
     ft_min:l.querySelector(".l_min").value,
     altn1:upc(l.querySelector(".l_altn1").value), altn2:upc(l.querySelector(".l_altn2").value),
     fuel:l.querySelector(".l_fuel").value.trim(),
+    dof:l.querySelector(".l_dofsame").checked ? "" : l.querySelector(".l_dof").value.trim(),
   }));
 }
 
@@ -1287,11 +1302,14 @@ function clientGenerate(body){
     const speed_level = (spd||level) ? (spd+level) : "";
 
     const item18=[], item18_list=[];
+    let dofPushed=false;
     (body.item18||[]).forEach(ex=>{
       const ind=(ex.ind||"").trim().toUpperCase().replace(/\/+$/,"");
-      const val=(ex.val||"").trim();
-      if(ind && val){ item18.push(`${ind}/${val}`); item18_list.push({ind,val}); }
+      let val=(ex.val||"").trim();
+      if(ind==="DOF" && leg.dof) val=leg.dof;   // DOF ของขานี้ต่างจาก Item 18 -> แทนค่าเฉพาะขานี้
+      if(ind && val){ item18.push(`${ind}/${val}`); item18_list.push({ind,val}); if(ind==="DOF") dofPushed=true; }
     });
+    if(leg.dof && !dofPushed){ item18.push(`DOF/${leg.dof}`); item18_list.push({ind:"DOF",val:leg.dof}); }  // เผื่อ Item 18 ไม่มี DOF
     const item18_str = item18.length ? item18.join(" ") : "0";
 
     const acft = `${common.acft_type||"ZZZZ"}/${common.wake||"M"}`;
