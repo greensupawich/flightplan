@@ -612,7 +612,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
           <input id="f_colour" readonly title="ดึงอัตโนมัติจาก Aircraft DB ตาม A/C No. ที่เลือก"
             style="background:var(--bg);color:var(--muted);cursor:not-allowed"></div>
         <div class="field"><label>Filed by</label><input id="f_filed"></div>
-        <div class="field"><label>Phone</label><input id="f_phone"></div>
+        <div class="field"><label>Phone</label><input id="f_phone" type="tel" inputmode="tel" placeholder="0812345678 / +66812345678"></div>
       </div>
     </div>
 
@@ -706,7 +706,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
         <div class="field"><label>อีเมล (จากบัญชี Google)</label>
           <input id="p_email" disabled style="background:var(--bg);color:var(--muted);cursor:not-allowed"></div>
         <div class="field"><label>ชื่อ-สกุล</label><input id="p_name" placeholder="เช่น ร.ต. สมชาย ใจดี"></div>
-        <div class="field"><label>เบอร์โทร</label><input id="p_phone" placeholder="เช่น 081-234-5678"></div>
+        <div class="field"><label>เบอร์โทร</label><input id="p_phone" type="tel" inputmode="tel" placeholder="เช่น 081-234-5678 หรือ +66 81 234 5678"></div>
       </div>
       <div class="toolbar no-print" style="margin-top:14px;align-items:center">
         <button class="btn" onclick="saveProfile(this)">💾 บันทึกโปรไฟล์</button>
@@ -1956,22 +1956,31 @@ async function saveUser(btn){
   }catch(err){ setSyncBadge("online"); toast("บันทึกไม่สำเร็จ: "+err.message, true); }
 }
 // ---- โปรไฟล์ส่วนตัว ----
+// เบอร์โทร: เก็บเป็นข้อความเสมอ · กู้เลข 0 นำหน้า/เครื่องหมาย + ที่ Google Sheets เคยตัดทิ้ง (ข้อมูลเก่าที่ถูกแปลงเป็นตัวเลข)
+function fixPhone(v){
+  const s=String(v==null?"":v).trim();
+  if(/^\d+$/.test(s)){
+    if((s.length===9||s.length===8) && /^[2-9]/.test(s)) return "0"+s;   // 08x-xxx-xxxx / 02-xxx-xxxx ที่เสีย 0
+    if(s.length===11 && s.startsWith("66")) return "+"+s;                // +66xxxxxxxxx ที่เสีย +
+  }
+  return s;
+}
 function renderProfile(p){
   p=p||{};
   const set=(id,v)=>{ const el=document.getElementById(id); if(el) el.value=v||""; };
   set("p_email", p.email||USER_EMAIL);
-  set("p_name", p.name); set("p_phone", p.phone);
+  set("p_name", p.name); set("p_phone", fixPhone(p.phone));
 }
 // ใช้ชื่อ/เบอร์จากโปรไฟล์เป็น default ของ Filed by / Phone (ถ้าช่องยังว่าง — ไม่ทับค่าที่ผู้ใช้กรอกเอง/โหลดจากแผน)
 function applyProfileDefaults(p){
   p=p||{};
   const f=document.getElementById("f_filed"), ph=document.getElementById("f_phone");
   if(f && !f.value.trim() && p.name)  f.value=p.name;
-  if(ph && !ph.value.trim() && p.phone) ph.value=p.phone;
+  if(ph && !ph.value.trim() && p.phone) ph.value=fixPhone(p.phone);
 }
 async function saveProfile(btn){
   const g=id=>(document.getElementById(id).value||"").trim();
-  const row={ name:g("p_name"), phone:g("p_phone") };
+  const row={ name:g("p_name"), phone:fixPhone(g("p_phone")) };
   const msg=document.getElementById("profileMsg");
   if(btn) btn.disabled=true; msg.style.color=""; msg.textContent="กำลังบันทึก...";
   try{
