@@ -1525,16 +1525,29 @@ function renderPreview(res, obj){
 // เปิด print dialog -> เลือกปลายทาง "Save as PDF" -> เลือก location ได้ (render ด้วย engine เดียวกับที่แสดงบนจอ)
 // ย้าย #preview ออกมาเป็นลูกของ body ชั่วคราวตอนพิมพ์ แล้วซ่อนที่เหลือด้วย display:none
 // (ถ้าปล่อยไว้ใน main แล้วใช้ visibility:hidden ส่วนอื่นจะยังกินความสูง -> มีหน้าว่างเกินท้ายสุด)
+// ชื่อไฟล์ PDF ตอนพิมพ์ (เบราว์เซอร์ใช้ document.title เป็นชื่อไฟล์เริ่มต้น):
+//   "Flight Plan <Callsign> DOF<YYMMDD>" · DOF จาก Item 18 -> DOF ของ leg แรก -> วันนี้
+const _baseTitle = document.title;
+function pdfFileTitle(){
+  const cs=(document.getElementById("f_callsign").value||"").toUpperCase().replace(/[^A-Z0-9]/g,"");
+  let dof=(collectItem18().find(x=>x.ind.toUpperCase()==="DOF")||{}).val||"";
+  if(!dof){ const l=collectLegs().find(l=>l.dof); if(l) dof=l.dof; }
+  dof=String(dof).replace(/\D/g,"");
+  if(dof.length!==6){ const d=new Date(); dof=String(d.getFullYear()).slice(2)+String(d.getMonth()+1).padStart(2,"0")+String(d.getDate()).padStart(2,"0"); }
+  return ["Flight Plan", cs, "DOF"+dof].filter(Boolean).join(" ");
+}
 let _pvHome = null;
 function preparePrint(){
   const pv = document.getElementById("preview");
   if(_pvHome || !pv || !pv.querySelector(".fpl-page")) return;   // ไม่มีฟอร์ม -> ไม่ต้องย้าย
+  document.title = pdfFileTitle();
   _pvHome = document.createComment("preview-home");
   pv.parentNode.insertBefore(_pvHome, pv);
   document.body.appendChild(pv);
   document.body.classList.add("printing");
 }
 function restorePrint(){
+  document.title = _baseTitle;
   if(!_pvHome) return;
   const pv = document.getElementById("preview");
   _pvHome.parentNode.insertBefore(pv, _pvHome);
