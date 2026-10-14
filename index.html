@@ -3,6 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!-- CSP: อนุญาตเฉพาะ Google Sign-In + Apps Script · เพิ่มโดเมนใหม่ต้องแก้ตรงนี้ -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/client; style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style; img-src 'self' data: blob: https://*.googleusercontent.com; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://accounts.google.com/gsi/; frame-src https://accounts.google.com/gsi/; object-src 'none'; base-uri 'self'; form-action 'self'">
 <title>Flight Plan Generator (Standalone)</title>
 <style>
   :root{
@@ -1574,9 +1576,9 @@ async function loadPlans(){
   const t=document.getElementById("planTable");
   t.innerHTML=`<thead><tr><th>ID</th><th>ชื่อแผน</th><th>เวลา</th><th style="width:180px">จัดการ</th></tr></thead>
     <tbody>${rows.map(r=>`<tr>
-      <td>${r.id}</td><td>${esc(r.name)}</td><td class="muted">${esc(r.created_at)}</td>
-      <td><button class="btn sm" onclick="openPlan(${r.id})">เปิด</button>
-          <button class="btn sm red" onclick="delPlan(${r.id})">ลบ</button></td></tr>`).join("")}</tbody>`;
+      <td>${Number(r.id)}</td><td>${esc(r.name)}</td><td class="muted">${esc(r.created_at)}</td>
+      <td><button class="btn sm" onclick="openPlan(${Number(r.id)})">เปิด</button>
+          <button class="btn sm red" onclick="delPlan(${Number(r.id)})">ลบ</button></td></tr>`).join("")}</tbody>`;
 }
 async function openPlan(id){
   const p=plansGet(id);
@@ -1603,10 +1605,10 @@ function buildTable(table, rows, tableId){
   const cols=COLS[table];
   const el=document.getElementById(tableId);
   el.innerHTML=`<thead><tr>${cols.map(c=>`<th${c[2]?` style="width:${c[2]}px"`:''}>${c[1]}</th>`).join("")}<th style="width:60px">ลบ</th></tr></thead>
-    <tbody>${rows.map(r=>`<tr data-id="${r.id}">
+    <tbody>${rows.map(r=>`<tr data-id="${Number(r.id)}">
       ${cols.map(c=>{const up=(UPPER_COLS[table]||[]).includes(c[0]);
-        return `<td><input class="c_${c[0]}" value="${esc(r[c[0]])}" ${up?UPCASE_ATTR:""} onchange="autoSave('${table}',${r.id},this)"></td>`;}).join("")}
-      <td><button class="btn sm red" onclick="delRow('${table}',${r.id})">ลบ</button></td></tr>`).join("")}</tbody>`;
+        return `<td><input class="c_${c[0]}" value="${esc(r[c[0]])}" ${up?UPCASE_ATTR:""} onchange="autoSave('${table}',${Number(r.id)},this)"></td>`;}).join("")}
+      <td><button class="btn sm red" onclick="delRow('${table}',${Number(r.id)})">ลบ</button></td></tr>`).join("")}</tbody>`;
 }
 function renderRoutes(){
   const q=(document.getElementById("routeSearch").value||"").toLowerCase();
@@ -1723,8 +1725,8 @@ function computeFuel(){
 function fuelAltnDetail(c){
   if(c.altnKind==="db") return `${esc(c.des)}→${esc(c.a1)} (${c.altnTimeStr}) จาก DB`;
   if(c.altnKind==="manual") return `⚠️ ไม่พบ ${esc(c.des)}→${esc(c.a1)} ใน DB — กรอกเวลาบินไป ALTN เอง
-    <input value="${fuelGet(c.i).altnHr??''}" placeholder="hr" onchange="setFuel(${c.i},'altnHr',this.value)" style="width:52px;display:inline-block">
-    : <input value="${fuelGet(c.i).altnMin??''}" placeholder="min" onchange="setFuel(${c.i},'altnMin',this.value)" style="width:52px;display:inline-block">`;
+    <input value="${esc(fuelGet(c.i).altnHr??'')}" placeholder="hr" onchange="setFuel(${c.i},'altnHr',this.value)" style="width:52px;display:inline-block">
+    : <input value="${esc(fuelGet(c.i).altnMin??'')}" placeholder="min" onchange="setFuel(${c.i},'altnMin',this.value)" style="width:52px;display:inline-block">`;
   return "ไม่ได้ระบุ ALTN1";
 }
 function renderFuel(){
@@ -1747,12 +1749,12 @@ function renderFuel(){
       <table>
         <thead><tr><th style="width:220px">รายการ</th><th>รายละเอียด</th><th style="width:110px;text-align:right">kg</th></tr></thead>
         <tbody>
-          <tr><td>1. Taxi fuel</td><td><input value="${taxi}" onchange="setFuel(${i},'taxi',this.value)" style="width:100px"> <span class="muted">default 70</span></td><td style="text-align:right">${fkg(taxi)}</td></tr>
+          <tr><td>1. Taxi fuel</td><td><input value="${esc(taxi)}" onchange="setFuel(${i},'taxi',this.value)" style="width:100px"> <span class="muted">default 70</span></td><td style="text-align:right">${fkg(taxi)}</td></tr>
           <tr><td>2. Trip fuel</td><td class="muted">${tripDetail}</td><td style="text-align:right">${fkg(trip)}</td></tr>
           <tr><td>3. Contingency fuel</td><td class="muted">max(5% × ${fkg(trip)} = ${fkg(trip*0.05)}, 50) → ใช้${contBig?' 5% ของ trip':'ขั้นต่ำ 50'}</td><td style="text-align:right">${fkg(cont)}</td></tr>
           <tr><td>4. Alternate fuel</td><td class="muted">${altnDetail}</td><td style="text-align:right">${fkg(altn)}</td></tr>
           <tr><td>5. Final Reserve fuel</td><td class="muted">คงที่ 450</td><td style="text-align:right">${fkg(fr)}</td></tr>
-          <tr><td>6. Additional / Extra fuel</td><td><input value="${add}" onchange="setFuel(${i},'add',this.value)" style="width:100px"> <span class="muted">นักบินกรอกเพิ่ม</span></td><td style="text-align:right">${fkg(add)}</td></tr>
+          <tr><td>6. Additional / Extra fuel</td><td><input value="${esc(add)}" onchange="setFuel(${i},'add',this.value)" style="width:100px"> <span class="muted">นักบินกรอกเพิ่ม</span></td><td style="text-align:right">${fkg(add)}</td></tr>
           <tr><td class="muted">รวม fuel 6 ชนิด (ขานี้)</td><td class="muted">1+2+3+4+5+6</td><td style="text-align:right" class="muted">${fkg(six)}</td></tr>
           <tr style="font-weight:700;background:#22c55e18"><td>Expected used fuel</td><td class="muted">Taxi + Trip (1+2)</td><td style="text-align:right;color:var(--green);font-size:15px">${fkg(used)}</td></tr>
           <tr style="font-weight:700;background:#ff8c1a1f"><td>Required fuel</td><td class="muted">${reqDetail}</td><td style="text-align:right;color:var(--accent);font-size:15px">${fkg(required)}</td></tr>
@@ -1938,7 +1940,7 @@ function initAuth(){
 }
 
 // ---------------- users management (admin) ----------------
-const fmtTime=d=>d?String(d).replace("T"," ").slice(0,16):"—";
+const fmtTime=d=>d?esc(String(d).replace("T"," ").slice(0,16)):"—";
 // อัปเดตทั้งตารางผู้ใช้ + ตารางคำขอ จาก response เดียว (server คืน users+requests มาด้วยกัน)
 function renderAdmin(res){
   if(res && Array.isArray(res.users)) renderUsers(res.users);
@@ -2029,7 +2031,7 @@ function renderReports(reports){
       <td class="muted">${fmtTime(r.time)}</td>
       <td>${r.name?esc(r.name)+"<br>":""}<span class="muted" style="font-size:12px">${esc(r.email)}</span></td>
       <td style="white-space:pre-wrap">${esc(r.message)}</td>
-      <td><button class="btn sm red" onclick="deleteReport(${r.id})">ลบ</button></td></tr>`).join("")}
+      <td><button class="btn sm red" onclick="deleteReport(${Number(r.id)})">ลบ</button></td></tr>`).join("")}
     </tbody>`;
 }
 async function deleteReport(id){
